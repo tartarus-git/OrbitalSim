@@ -124,7 +124,6 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		if (orbitFlag) {
 			Vector2f diff = newBodyPos - mainBody.pos;
 			float dist = diff.getAmplitude();
-			float speed = sqrt(G / dist);
 			diff = Vector2f(-diff.y, diff.x);
 			diff.multiply(sqrt(G / dist) / dist);
 			newBodyVel = diff;
