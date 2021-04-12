@@ -8,14 +8,18 @@
 // Macro for logging debug output.
 #define PRINT(message) OutputDebugString(TEXT(message) "\n")
 
-#define G 5
+#define G 10000
+#define SPRING_STRENGTH 10
+#define SPRING_FRICTION 0.1f
 
-#define VELOCITY_SENSITIVITY 0.005f					// TOOD: Figure out why hovering over this float value gives you a slightly off float value.
+#define VELOCITY_SENSITIVITY 0.05f					// TOOD: Figure out why hovering over this float value gives you a slightly off float value.
 
 #define PARTICLE_RAD 20
 
 #define KEY_O 0x4F
 #define KEY_X 0x58
+
+#define NANOSECONDS_PER_SECOND 1000000000
 
 bool shouldGraphicsLoopRun = true;
 
@@ -93,6 +97,35 @@ public:
 		vel.add(gravVec);
 		other.vel.sub(gravVec);
 	}
+
+	Vector2f getCollisionSpringVector(Body other) {
+		Vector2f diff = other.pos - pos;
+		float dist = diff.getAmplitude();
+		diff.multiply((PARTICLE_RAD * 2 - dist) * SPRING_STRENGTH / dist);
+		return diff;
+	}
+
+	void applyCollisionSpring(Body other) {
+		Vector2f diff = other.pos - pos;
+		float dist = diff.getAmplitude();
+		if (dist < PARTICLE_RAD * 2) {
+			diff.multiply((PARTICLE_RAD * 2 - dist) * SPRING_STRENGTH / dist);
+			vel.sub(diff);
+			vel.multiply(SPRING_FRICTION);
+			other.vel.add(diff);
+			other.vel.multiply(SPRING_FRICTION);
+		}
+	}
+
+	void applyStationaryCollisionSpring(Body other) {
+		Vector2f diff = other.pos - pos;
+		float dist = diff.getAmplitude();
+		if (dist < PARTICLE_RAD * 2) {
+			diff.multiply((PARTICLE_RAD * 2 - dist) * SPRING_STRENGTH / dist);
+			vel.sub(diff);
+			vel.multiply(SPRING_FRICTION);
+		}
+	}
 };
 
 Body mainBody;
@@ -104,6 +137,8 @@ bool mouseDown = false;
 Vector2f newBodyPos;
 Vector2f newBodyVelPos;
 Vector2f newBodyVel;
+
+bool resizeFlag = false;
 
 void graphicsLoop(HWND hWnd);
 
@@ -145,6 +180,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		if (mouseDown) {
 			newBodyVelPos = Vector2f(lParam & 0x0000FFFF, lParam >> 16);
 		}
+		return 0;
+	case WM_EXITSIZEMOVE:
+		resizeFlag = true;
 		return 0;
 	case WM_DESTROY:
 		PostQuitMessage(0);
@@ -241,6 +279,31 @@ public:
 	~LinkedList() { release(); }
 };
 
+class FrameManager {
+	std::chrono::high_resolution_clock::time_point frameStart;
+	int nsPerFrame;
+
+public:
+	FrameManager(int FPS) {
+		nsPerFrame = NANOSECONDS_PER_SECOND / FPS;
+	}
+
+	void start() {
+		frameStart = std::chrono::high_resolution_clock::now();
+	}
+
+	std::chrono::high_resolution_clock::duration measure() {
+		return std::chrono::high_resolution_clock::now() - frameStart;
+	}
+	
+	void delay() {
+		long long frameDuration = measure().count();
+		if (frameDuration < nsPerFrame) {
+			std::this_thread::sleep_for(std::chrono::nanoseconds(nsPerFrame - frameDuration));
+		}
+	}
+};
+
 //Global variables which are used to hold values in lambda functions.
 LinkedList<Body>* tempI;
 
@@ -257,11 +320,6 @@ void graphicsLoop(HWND hWnd) {
 	// Get bounds of window.
 	RECT clientBounds;
 	GetClientRect(hWnd, &clientBounds);
-	RECT physicsBounds;
-	physicsBounds.left = clientBounds.left + PARTICLE_RAD;
-	physicsBounds.top = clientBounds.top + PARTICLE_RAD;
-	physicsBounds.right = clientBounds.right - PARTICLE_RAD;
-	physicsBounds.bottom = clientBounds.bottom - PARTICLE_RAD;
 
 	// Create a seconds DC for double-buffering.
 	g = CreateCompatibleDC(hDC);
@@ -281,7 +339,11 @@ void graphicsLoop(HWND hWnd) {
 	mainBody = Body(Vector2f(clientBounds.right / 2, clientBounds.bottom / 2), Vector2f(0, 0));
 	LinkedList<Body> universe;
 
+	FrameManager mainFrameManager(120);
+
 	while (shouldGraphicsLoopRun) {
+		mainFrameManager.start();
+
 		// Background
 		SelectObject(g, backgroundBrush);
 		SelectObject(g, backgroundPen);
@@ -299,10 +361,12 @@ void graphicsLoop(HWND hWnd) {
 			});
 			universe.iterate([](LinkedList<Body>* i) {
 				i->element.vel.add(i->element.getGravityVector(mainBody));
+				i->element.applyStationaryCollisionSpring(mainBody);
 				if (i->length == 1) { return; }
 				tempI = i;
 				i->child->iterate([](LinkedList<Body>* j) {
 					tempI->element.applyGravity(j->element);
+					tempI->element.applyCollisionSpring(j->element);
 				});
 			});
 			universe.iterate([](LinkedList<Body>* i) {
@@ -333,14 +397,27 @@ void graphicsLoop(HWND hWnd) {
 			universe.clear();
 			clearUniverse = false;
 		}
+
+		if (resizeFlag) {
+			GetClientRect(hWnd, &clientBounds);
+			mainBody.pos.x = clientBounds.right / 2;
+			mainBody.pos.y = clientBounds.bottom / 2;
+			DeleteObject(bmp);
+			bmp = CreateCompatibleBitmap(hDC, clientBounds.right, clientBounds.bottom);
+			SelectObject(g, bmp);
+			resizeFlag = false;
+		}
+
+		mainFrameManager.delay();
 	}
 
 	// TODO: What do I do about the bitmap?
 	DeleteObject(mainBodyPen);
-	DeleteObject(mainBodyBrush);
+	DeleteObject(mainBodyBrush);				// TODO: Add FrameManager and make sure everything is also disposed properly at the end of execution.
 	DeleteObject(bodyPen);
 	DeleteObject(bodyBrush);
 	DeleteObject(velocityPen);
 	DeleteDC(g);
+	DeleteObject(bmp);
 	ReleaseDC(hWnd, hDC);
 }
