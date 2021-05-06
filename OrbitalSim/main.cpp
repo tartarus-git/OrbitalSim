@@ -49,7 +49,7 @@ public:
 		return Vector2f(x + v.x, y + v.y);
 	}
 
-	Vector2f operator-(Vector2f v) {			// TODO: Should I do this with a reference or with value types.
+	Vector2f operator-(Vector2f v) {
 		return Vector2f(x - v.x, y - v.y);
 	}
 
@@ -92,7 +92,7 @@ public:
 		return diff;
 	}
 
-	void applyGravity(Body other) {
+	void applyGravity(Body& other) {
 		Vector2f gravVec = getGravityVector(other);
 		vel.add(gravVec);
 		other.vel.sub(gravVec);
@@ -105,7 +105,7 @@ public:
 		return diff;
 	}
 
-	void applyCollisionSpring(Body other) {
+	void applyCollisionSpring(Body& other) {
 		Vector2f diff = other.pos - pos;
 		float dist = diff.getAmplitude();
 		if (dist < PARTICLE_RAD * 2) {
@@ -153,7 +153,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			clearUniverse = true;
 			return 0;
 		}
-		DefWindowProc(hWnd, uMsg, wParam, lParam);
+		break;
 	case WM_LBUTTONDOWN:
 		newBodyPos = Vector2f(lParam & 0x0000FFFF, lParam >> 16);
 		if (orbitFlag) {
@@ -379,7 +379,7 @@ void graphicsLoop(HWND hWnd) {
 		// Draw velocity line if need be.
 		if (mouseDown) {
 			SelectObject(g, velocityPen);
-			MoveToEx(g, newBodyPos.x, newBodyPos.y, NULL);					// TODO: I've always wondered what this Ex stuff is behind some of the functions. What is that. Research.
+			MoveToEx(g, newBodyPos.x, newBodyPos.y, NULL);
 			LineTo(g, newBodyVelPos.x, newBodyVelPos.y);
 		}
 
@@ -411,9 +411,8 @@ void graphicsLoop(HWND hWnd) {
 		mainFrameManager.delay();
 	}
 
-	// TODO: What do I do about the bitmap?
 	DeleteObject(mainBodyPen);
-	DeleteObject(mainBodyBrush);				// TODO: Add FrameManager and make sure everything is also disposed properly at the end of execution.
+	DeleteObject(mainBodyBrush);
 	DeleteObject(bodyPen);
 	DeleteObject(bodyBrush);
 	DeleteObject(velocityPen);
